@@ -29,7 +29,7 @@ import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity {
 
-    int totalNumberOfHeadLines;
+
     String u;
     ListView listView;
     ArrayList<String> titles = new ArrayList<>();
@@ -48,14 +48,25 @@ public class MainActivity extends AppCompatActivity {
         listView.setAdapter(arrayAdapter);
         articleDB = this.openOrCreateDatabase("Articles",MODE_PRIVATE,null);
         articleDB.execSQL("CREATE TABLE IF NOT EXISTS newArticles (id INTEGER PRIMARY KEY,articleId INTEGER,title VARCHAR,link VARCHAR)");
-        updateListView();
+        articleDB.execSQL("CREATE TABLE IF NOT EXISTS tempArticles (id INTEGER PRIMARY KEY,articleId INTEGER,title VARCHAR,link VARCHAR)");
+        updateListView("newArticles");
 
         DownloadTask task = new DownloadTask();
         DownloadTask1 task1 = new DownloadTask1();
+        Log.i("Size",""+titles.size());
         try
         {
-            task.execute("https://hacker-news.firebaseio.com/v0/topstories.json?print=pretty");
-            task1.execute("https://hacker-news.firebaseio.com/v0/topstories.json?print=pretty");
+            
+            if(titles.size()<40)
+            {
+                task.execute("https://hacker-news.firebaseio.com/v0/topstories.json?print=pretty");
+                task1.execute("https://hacker-news.firebaseio.com/v0/topstories.json?print=pretty");
+
+            }else{
+                task1.execute("https://hacker-news.firebaseio.com/v0/topstories.json?print=pretty");
+
+            }
+
         }catch (Exception e)
         {
             e.printStackTrace();
@@ -72,9 +83,9 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    public void updateListView()
+    public void updateListView(String tableName)
     {
-        Cursor c = articleDB.rawQuery("SELECT * FROM newArticles",null);
+        Cursor c = articleDB.rawQuery("SELECT * FROM "+tableName,null);
         int contentIndex = c.getColumnIndex("link");
         int titleIndex = c.getColumnIndex("title");
 
@@ -105,8 +116,10 @@ public class MainActivity extends AppCompatActivity {
         @Override
         protected void onPostExecute(String s) {
             super.onPostExecute(s);
-            updateListView();
+            updateListView("newArticles");
             Toast.makeText(MainActivity.this,"Please give 5 minutes to load more data",Toast.LENGTH_LONG).show();
+
+
         }
     }
 
@@ -117,15 +130,45 @@ public class MainActivity extends AppCompatActivity {
         protected String doInBackground(String... strings) {
 
             u = strings[0];
-            downloadData(totalNumberOfHeadLines,u);
+            downloadData(getTotalNumberOfHeadLines(u),u);
             return null;
         }
 
         @Override
         protected void onPostExecute(String s) {
             super.onPostExecute(s);
-            updateListView();
+            updateListView("newArticles");
+            Toast.makeText(MainActivity.this,"Awesomness Refreshed !",Toast.LENGTH_SHORT).show();
         }
+    }
+
+    public int getTotalNumberOfHeadLines(String u) {
+        String result = "";
+        URL url;
+
+        HttpURLConnection httpURLConnection = null;
+        try {
+            int totalNumberOfHeadLines;
+            url = new URL(u);
+            httpURLConnection = (HttpURLConnection) url.openConnection();
+            InputStream in = httpURLConnection.getInputStream();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(in));
+            String data = reader.readLine();
+
+            while (data != null) {
+                result += data;
+                data = reader.readLine();
+            }
+
+            //Log.i("Result",""+result);
+            JSONArray jsonArray = new JSONArray(result);
+            totalNumberOfHeadLines = jsonArray.length();
+            return totalNumberOfHeadLines;
+        }catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+        return 0;
     }
 
     public String downloadData(int numberOfResultNeeded,String u)
@@ -149,9 +192,8 @@ public class MainActivity extends AppCompatActivity {
 
             //Log.i("Result",""+result);
             JSONArray jsonArray = new JSONArray(result);
-            totalNumberOfHeadLines = jsonArray.length();
 
-            articleDB.execSQL("DELETE FROM newArticles");
+            articleDB.execSQL("DELETE FROM tempArticles");
             for(int i=0;i<numberOfResultNeeded;i++)
             {
                 //Log.i("IDs",""+jsonArray.getString(i));
@@ -186,13 +228,17 @@ public class MainActivity extends AppCompatActivity {
                             articleInfo+=data;
                             data=reader.readLine();
                         }*/
-                    String sql = "INSERT INTO newArticles (articleId , title , link) VALUES ( ? , ? , ?)";
+                    String sql = "INSERT INTO tempArticles (articleId , title , link) VALUES ( ? , ? , ?)";
                     SQLiteStatement statement = articleDB.compileStatement(sql);
                     statement.bindString(1,articleID);
                     statement.bindString(2,articleTitle);
                     Log.i("URLs",""+articleUrl);
                     statement.bindString(3,articleUrl);
                     statement.execute();
+                    articleDB.execSQL("DELETE FROM newArticles");
+                    articleDB.execSQL("INSERT INTO newArticles SELECT * FROM tempArticles");
+
+
                 }
             }
             return result;
